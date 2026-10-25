@@ -1,0 +1,285 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Kitchen Cabinet</title>
+<meta name="description" content="Track what's in your fridge, freezer and pantry, and cook it before it goes off.">
+<meta name="theme-color" content="#f2f4f8" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#0e1322" media="(prefers-color-scheme: dark)">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Cabinet">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icons/icon-192.png" type="image/png">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=DotGothic16&family=Hanken+Grotesk:wght@400;500;600;700&display=swap">
+<style>
+/* Layout: one phone-width column, sticky header with a cobalt enamel rim, tab bar at the bottom.
+   Use-by dates are printed in a dot-matrix face, the way packaging stamps them. */
+:root{
+  --bg:#f2f4f8; --surface:#ffffff; --fg:#162039; --muted:#5b6580; --line:#dbe0ea;
+  --accent:#2347a8; --accent-ink:#ffffff; --accent-soft:#e2e8f8; --scrim:rgb(10 16 34 / .45);
+  --bad:#b3232c; --bad-soft:#fbe4e5; --warn:#8f5400; --warn-soft:#fcefd6; --ok:#1d7546; --ok-soft:#dff2e6;
+  --font:"Hanken Grotesk", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --stamp:"DotGothic16", ui-monospace, "SF Mono", Menlo, monospace;
+  --r:10px;
+  color-scheme:light;
+}
+@media (prefers-color-scheme: dark){ :root{
+  --bg:#0e1322; --surface:#171f35; --fg:#e7ebf5; --muted:#9aa3bd; --line:#29324d;
+  --accent:#86a2f2; --accent-ink:#0e1322; --accent-soft:#1f2a4b; --scrim:rgb(0 0 0 / .6);
+  --bad:#ff8d92; --bad-soft:#3b1a21; --warn:#f0b864; --warn-soft:#382912; --ok:#72d29e; --ok-soft:#14321f;
+  color-scheme:dark;
+}}
+*{box-sizing:border-box}
+[hidden]{display:none!important}
+html,body{min-height:100%}
+html{-webkit-text-size-adjust:100%}
+body{margin:0;background:var(--bg);color:var(--fg);font:15px/1.45 var(--font);-webkit-tap-highlight-color:transparent}
+h1,h2,h3,h4{text-wrap:balance}
+.top{position:sticky;top:0;z-index:5;background:var(--bg);border-bottom:3px solid var(--accent);
+  padding:calc(12px + env(safe-area-inset-top,0px)) 16px 10px;display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:4px 12px}
+.brand{font-family:var(--stamp);font-size:20px;letter-spacing:.06em;color:var(--accent);margin:0;font-weight:400;white-space:nowrap}
+.topright{display:flex;align-items:center;gap:2px;min-width:0;margin-left:auto}
+.status{font-size:13px;color:var(--muted);font-weight:600;text-align:right}
+.status.bad{color:var(--bad)} .status.warn{color:var(--warn)}
+.iconbtn{border:0;background:none;color:var(--muted);padding:6px;border-radius:8px;display:grid;place-items:center;flex-shrink:0}
+.iconbtn svg{width:22px;height:22px}
+main{max-width:640px;margin:0 auto;padding-inline:16px;padding-block:16px calc(88px + env(safe-area-inset-bottom,0px))}
+.tab{display:flex;flex-direction:column;gap:14px}
+h2{font-size:12px;text-transform:uppercase;letter-spacing:.09em;color:var(--muted);margin:10px 0 -6px;font-weight:700}
+/* 16px keeps iOS from zooming the page when a field gets focus */
+input,select,textarea{font:inherit;font-size:16px;color:inherit;background:var(--surface);border:1px solid var(--line);border-radius:8px;padding:9px 10px;min-width:0;width:100%}
+textarea{resize:vertical}
+button{font:inherit;cursor:pointer;color:inherit}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.btn{border:1px solid var(--accent);background:var(--accent);color:var(--accent-ink);border-radius:8px;padding:9px 14px;font-weight:600;white-space:nowrap}
+.btn.ghost{background:transparent;color:var(--accent)}
+.btn:disabled{opacity:.5;cursor:default}
+.link{border:0;background:none;color:var(--accent);font-weight:600;padding:4px 6px;border-radius:6px}
+.link.danger{color:var(--bad)}
+.field{display:flex;flex-direction:column;gap:3px;font-size:12px;color:var(--muted);font-weight:600;min-width:0}
+.field input,.field select{color:var(--fg);font-weight:400}
+.add{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:8px 10px;background:var(--surface);border:1px solid var(--line);border-radius:var(--r);padding:12px}
+.add .f-name{grid-column:span 4} .add .f-qty{grid-column:span 2} .add .f-place,.add .f-exp{grid-column:span 3}
+.add .actions{grid-column:1/-1;display:flex;gap:8px;flex-wrap:wrap}
+.hint{font-size:13px;color:var(--muted);margin:-6px 2px 0}
+.chips{display:flex;gap:6px;flex-wrap:wrap}
+.chip{border:1px solid var(--line);background:var(--surface);border-radius:999px;padding:5px 12px;font-size:13px;font-weight:600;color:var(--muted)}
+.chip[aria-pressed="true"]{background:var(--accent-soft);border-color:var(--accent);color:var(--accent)}
+.list{background:var(--surface);border:1px solid var(--line);border-radius:var(--r);overflow:hidden}
+.row{display:flex;gap:10px 12px;padding:11px 14px;border-top:1px solid var(--line);align-items:center}
+.row:first-child{border-top:0}
+.row.bad{box-shadow:inset 3px 0 var(--bad)} .row.warn{box-shadow:inset 3px 0 var(--warn)}
+.rowmain{all:unset;cursor:pointer;display:flex;flex-direction:column;gap:2px;min-width:0;flex:1;border-radius:6px}
+.rowmain:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.name{font-weight:600;overflow-wrap:anywhere}
+.meta{font-size:13px;color:var(--muted);display:flex;gap:4px 10px;flex-wrap:wrap;align-items:center}
+.stamp{font-family:var(--stamp);font-size:12px;letter-spacing:.05em}
+.rowside{display:flex;flex-direction:column;align-items:flex-end;gap:4px;flex-shrink:0}
+.pill{font-size:12px;font-weight:700;padding:2px 8px;border-radius:999px;white-space:nowrap}
+.pill.bad{background:var(--bad-soft);color:var(--bad)} .pill.warn{background:var(--warn-soft);color:var(--warn)} .pill.ok{background:var(--ok-soft);color:var(--ok)}
+.soft{font-size:12px;color:var(--muted);white-space:nowrap}
+.edit{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px 10px;align-items:end}
+.editbar{grid-column:1/-1;display:flex;gap:6px;align-items:center;flex-wrap:wrap}
+.editbar .danger{margin-left:auto}
+.empty{color:var(--muted);background:var(--surface);border:1px dashed var(--line);border-radius:var(--r);padding:18px;margin:0}
+.aistatus{display:flex;gap:10px;align-items:center;justify-content:space-between;font-size:14px;color:var(--muted);background:var(--accent-soft);border-radius:8px;padding:9px 12px}
+.aistatus.err{background:var(--bad-soft);color:var(--bad)}
+.draft{background:var(--surface);border:1px solid var(--accent);border-radius:var(--r);padding:12px;display:flex;flex-direction:column;gap:8px}
+.draft h3{margin:0;font-size:15px}
+.drow{display:grid;grid-template-columns:auto minmax(0,2fr) minmax(0,1fr);gap:6px 8px;align-items:center;padding-top:8px;border-top:1px solid var(--line)}
+.drow .wide{grid-column:2/-1;display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:6px 8px}
+.drow input[type=checkbox]{width:20px;height:20px;accent-color:var(--accent)}
+.bar{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.inline{display:flex;gap:8px}
+.prefs{background:var(--surface);border:1px solid var(--line);border-radius:var(--r);padding:10px 12px}
+.prefs summary{font-weight:700;cursor:pointer}
+.prefgrid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px 10px;margin-top:10px}
+.prefgrid .wide{grid-column:1/-1}
+.ask{display:flex;gap:8px}
+.cards{display:flex;flex-direction:column;gap:10px}
+.card{background:var(--surface);border:1px solid var(--line);border-radius:var(--r);padding:14px;display:flex;flex-direction:column;gap:6px}
+.card h3{margin:0;font-size:17px}
+.card p{margin:0}
+.why{color:var(--muted);font-size:14px}
+.need{font-size:14px} .need b{color:var(--warn)}
+.card details summary{cursor:pointer;color:var(--accent);font-weight:600;font-size:14px}
+.card ul,.card ol,.panel ul,.panel ol{margin:6px 0 0;padding-left:20px}
+.card li,.panel li{margin:2px 0}
+.cardbar{display:flex;gap:8px;flex-wrap:wrap;margin-top:4px}
+.planrow{display:grid;grid-template-columns:minmax(0,1.2fr) minmax(0,1fr) auto;gap:8px;margin-top:4px}
+.weeknav{display:flex;justify-content:space-between;align-items:center;gap:8px}
+.weeknav strong{font-size:15px;text-align:center}
+.days{display:flex;flex-direction:column;gap:10px}
+.day{background:var(--surface);border:1px solid var(--line);border-radius:var(--r);padding:10px 12px}
+.day.today{border-color:var(--accent)}
+.day h3{margin:0 0 6px;font-size:14px;display:flex;gap:8px;align-items:center}
+.tag{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--accent);background:var(--accent-soft);border-radius:4px;padding:1px 6px}
+.slot{display:grid;grid-template-columns:76px minmax(0,1fr) 64px;gap:8px;align-items:center;padding:3px 0}
+.slot label{font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;font-weight:600}
+.slot input{padding:7px 9px}
+.shop{cursor:pointer}
+.shop input{width:20px;height:20px;accent-color:var(--accent);flex-shrink:0}
+.shop .name{flex:1}
+.shop.done .name{text-decoration:line-through;color:var(--muted);font-weight:400}
+.x{border:0;background:none;color:var(--muted);font-size:20px;line-height:1;padding:2px 6px;border-radius:6px}
+.note{color:var(--muted);margin:0}
+body:not(.no-ai) .only-no-ai,.no-ai .ai{display:none!important}
+.busy .aibtn{opacity:.5;pointer-events:none}
+.banner{background:var(--warn-soft);color:var(--warn);border-radius:8px;padding:10px 12px;font-weight:600;margin:0}
+main > .banner,main > .tip{margin-bottom:14px}
+.tip{display:flex;gap:10px;align-items:center;justify-content:space-between;background:var(--accent-soft);color:var(--fg);border-radius:8px;padding:10px 12px;font-size:14px}
+.tip .bar{flex-shrink:0;flex-wrap:nowrap}
+.aside{display:flex;gap:10px;align-items:center;justify-content:space-between;flex-wrap:wrap;background:var(--surface);border:1px dashed var(--line);border-radius:var(--r);padding:12px 14px}
+.tabs{position:fixed;left:0;right:0;bottom:0;z-index:6;background:var(--surface);border-top:1px solid var(--line);
+  display:grid;grid-template-columns:repeat(4,1fr);padding-bottom:env(safe-area-inset-bottom,0px)}
+.tabs button{border:0;background:none;color:var(--muted);font-weight:700;font-size:13px;padding:13px 4px 15px;position:relative}
+.tabs button[aria-selected="true"]{color:var(--accent)}
+.tabs button[aria-selected="true"]::before{content:"";position:absolute;top:0;left:22%;right:22%;height:3px;background:var(--accent);border-radius:0 0 3px 3px}
+.count{font-family:var(--stamp);font-weight:400;margin-left:4px}
+.toast{position:fixed;left:16px;right:16px;bottom:calc(66px + env(safe-area-inset-bottom,0px));z-index:25;margin:0 auto;max-width:560px;
+  background:var(--fg);color:var(--bg);border-radius:10px;padding:10px 14px;display:flex;gap:10px;align-items:center;justify-content:space-between;font-size:14px}
+.toast .link{color:var(--bg);text-decoration:underline}
+.sheet{position:fixed;inset:0;z-index:20;background:var(--scrim);display:flex;align-items:flex-end;justify-content:center}
+.panel{background:var(--surface);width:100%;max-width:640px;max-height:88%;overflow:auto;border-radius:14px 14px 0 0;
+  padding:16px 16px calc(18px + env(safe-area-inset-bottom,0px));display:flex;flex-direction:column;gap:8px}
+.panel h3{margin:0;font-size:19px}
+.panel h4{margin:8px 0 0;font-size:12px;text-transform:uppercase;letter-spacing:.08em;color:var(--muted)}
+.panel .note a{color:var(--accent);font-weight:600}
+.sheethead{display:flex;justify-content:space-between;align-items:flex-start;gap:10px}
+.keystatus{font-size:14px;margin:0;color:var(--muted)}
+.keystatus.ok{color:var(--ok)} .keystatus.err{color:var(--bad)}
+.signin{position:fixed;inset:0;z-index:30;background:var(--bg);overflow:auto;display:flex;align-items:flex-start;justify-content:center;
+  padding:calc(48px + env(safe-area-inset-top,0px)) 16px calc(24px + env(safe-area-inset-bottom,0px))}
+.signcard{width:100%;max-width:380px;display:flex;flex-direction:column;gap:12px;background:var(--surface);border:1px solid var(--line);border-top:3px solid var(--accent);border-radius:var(--r);padding:20px 18px}
+.signcard .brand{font-size:24px}
+.simsg{margin:0;font-size:14px;font-weight:600;color:var(--bad)}
+.simsg.ok{color:var(--ok)}
+.signcard .bar{justify-content:space-between}
+@media (max-width:380px){ .ask,.inline{flex-wrap:wrap} .planrow{grid-template-columns:1fr 1fr} .planrow .btn{grid-column:1/-1} }
+</style>
+</head>
+<body>
+
+<header class="top">
+  <h1 class="brand">KITCHEN CABINET</h1>
+  <div class="topright">
+    <button id="status" class="status link" type="button"></button>
+    <button id="settingsBtn" class="iconbtn" type="button" aria-label="Settings">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg>
+    </button>
+  </div>
+</header>
+
+<main>
+  <p id="banner" class="banner" hidden></p>
+  <div id="installTip" class="tip" hidden></div>
+
+  <section id="tab-cabinet" class="tab">
+    <form id="addForm" class="add" autocomplete="off">
+      <label class="field f-name">Item<input id="fName" placeholder="e.g. spinach" required></label>
+      <label class="field f-qty">Amount<input id="fQty" placeholder="e.g. 1 bag"></label>
+      <label class="field f-place">Kept in<select id="fPlace"><option value="fridge">Fridge</option><option value="freezer">Freezer</option><option value="pantry">Pantry</option></select></label>
+      <label class="field f-exp">Use by<input id="fExp" type="date"></label>
+      <div class="actions">
+        <button class="btn" type="submit">Add</button>
+        <button class="btn ghost ai aibtn" type="button" id="photoBtn">Add from a photo</button>
+      </div>
+      <input id="photoInput" type="file" accept="image/*" multiple hidden>
+    </form>
+    <p class="hint ai">Leave the date blank and Claude estimates it. A photo of a receipt, a grocery haul or the open fridge works too.</p>
+    <div id="cabAi" class="aistatus" hidden></div>
+    <section id="draft" class="draft" hidden></section>
+    <div class="chips" id="placeChips">
+      <button class="chip" data-place="all" aria-pressed="true">All</button>
+      <button class="chip" data-place="fridge" aria-pressed="false">Fridge</button>
+      <button class="chip" data-place="freezer" aria-pressed="false">Freezer</button>
+      <button class="chip" data-place="pantry" aria-pressed="false">Pantry</button>
+    </div>
+    <div id="items" class="tab"></div>
+  </section>
+
+  <section id="tab-cook" class="tab" hidden>
+    <details class="prefs" id="prefsBox">
+      <summary>Your tastes</summary>
+      <div class="prefgrid">
+        <label class="field">Diet<input id="pDiet" placeholder="e.g. vegetarian"></label>
+        <label class="field">Won't eat<input id="pDislikes" placeholder="e.g. mushrooms"></label>
+        <label class="field">Weeknight time<input id="pTime" placeholder="e.g. 30 minutes"></label>
+        <label class="field">Cooking for<input id="pServings" placeholder="e.g. 2 people"></label>
+        <label class="field wide">Anything else<textarea id="pNotes" rows="2" placeholder="e.g. love spicy food, have an air fryer"></textarea></label>
+      </div>
+    </details>
+    <div class="ask ai">
+      <input id="mood" placeholder="In the mood for something? (optional)" aria-label="In the mood for">
+      <button id="suggestBtn" class="btn aibtn">Suggest recipes</button>
+    </div>
+    <div class="aside only-no-ai">
+      <p class="note">Recipe ideas come from Claude. Add your API key to turn them on.</p>
+      <button class="btn ghost" type="button" data-open-settings>Open settings</button>
+    </div>
+    <div id="cookAi" class="aistatus" hidden></div>
+    <div id="suggestions" class="cards"></div>
+    <h2>Your recipes</h2>
+    <div id="saved"></div>
+  </section>
+
+  <section id="tab-plan" class="tab" hidden>
+    <div class="weeknav">
+      <button id="prevWeek" class="link" type="button">‹ Earlier</button>
+      <strong id="weekLabel"></strong>
+      <button id="nextWeek" class="link" type="button">Later ›</button>
+    </div>
+    <div class="bar">
+      <button id="planBtn" class="btn ai aibtn" type="button">Plan the empty dinners</button>
+      <button id="planShop" class="btn ghost" type="button">Add what these meals need to the list</button>
+    </div>
+    <div id="planAi" class="aistatus" hidden></div>
+    <div id="days" class="days"></div>
+  </section>
+
+  <section id="tab-shop" class="tab" hidden>
+    <form id="shopForm" class="inline" autocomplete="off">
+      <input id="sName" placeholder="Add to the list" aria-label="Item to buy" required>
+      <button class="btn" type="submit">Add</button>
+    </form>
+    <div id="shopAi" class="aistatus" hidden></div>
+    <div id="shopList"></div>
+    <div id="shopBar" class="bar" hidden>
+      <button id="putAway" class="btn aibtn" type="button"></button>
+      <button id="clearDone" class="link" type="button">Clear bought</button>
+    </div>
+  </section>
+</main>
+
+<nav class="tabs" aria-label="Sections">
+  <button data-tab="cabinet" aria-selected="true">Cabinet</button>
+  <button data-tab="cook" aria-selected="false">Cook</button>
+  <button data-tab="plan" aria-selected="false">Plan</button>
+  <button data-tab="shop" aria-selected="false">Shop<span id="shopCount" class="count"></span></button>
+</nav>
+<div id="toast" class="toast" role="status" hidden></div>
+
+<section id="signin" class="signin" hidden>
+  <form id="signinForm" class="signcard">
+    <h1 class="brand">KITCHEN CABINET</h1>
+    <p id="siIntro" class="note">Sign in to see your kitchen on any device.</p>
+    <label class="field">Email<input id="siEmail" type="email" autocomplete="username" autocapitalize="off" required></label>
+    <label class="field">Password<input id="siPass" type="password" autocomplete="current-password" minlength="6" required></label>
+    <p id="siMsg" class="simsg" role="alert" hidden></p>
+    <button id="siSubmit" class="btn" type="submit">Sign in</button>
+    <div class="bar">
+      <button id="siMode" class="link" type="button">New here? Create an account</button>
+      <button id="siReset" class="link" type="button">Forgot password?</button>
+    </div>
+  </form>
+</section>
+
+<script type="module" src="app.js"></script>
+</body>
+</html>
