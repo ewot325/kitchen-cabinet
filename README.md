@@ -13,7 +13,7 @@ It's a static web app: no build step, no server of its own. Data syncs through F
 3. **Build → Firestore Database → Create database**: pick a location near you and start in **production mode**.
 4. In Firestore, open the **Rules** tab, replace everything with the contents of [`firestore.rules`](firestore.rules), and **Publish**.
 5. **Project settings** (gear icon) **→ General → Your apps → Web (`</>`)**: register an app (no Firebase Hosting needed) and copy the `firebaseConfig` object into [`config.js`](config.js).
-6. **Authentication → Settings → Authorized domains**: add the domain the app is served from (for GitHub Pages, `<username>.github.io`).
+6. **Authentication → Settings → Authorized domains**: add the domain the app is served from (this copy lives at `elliotgross.com`; a plain GitHub Pages site would be `<username>.github.io`).
 7. Optional, once your account exists: **Authentication → Settings → User actions**, turn off **Enable create (sign-up)** so nobody else can make accounts on your project.
 
 Until `config.js` has a config, the app keeps data on the device it's opened on. Anything added that way moves into your account the first time you sign in.
