@@ -3,6 +3,11 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<script>
+  // Offline use and home-screen install need HTTPS, and the host doesn't force it.
+  if (location.protocol === 'http:' && !/^(localhost|127\.0\.0\.1|\[::1\])$/.test(location.hostname))
+    location.replace('https://' + location.host + location.pathname + location.search + location.hash);
+</script>
 <title>Kitchen Cabinet</title>
 <meta name="description" content="Track what's in your fridge, freezer and pantry, and cook it before it goes off.">
 <meta name="theme-color" content="#f2f4f8" media="(prefers-color-scheme: light)">
