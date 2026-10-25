@@ -17,7 +17,7 @@ const TABS = ['cabinet','cook','plan','shop'];
 const MAX_PHOTOS = 5;
 
 const state = {
-  items:[], shopping:[], meals:{}, recipes:[], prefs:{},
+  items:[], shopping:[], meals:{}, recipes:[], prefs:{}, waste:[],
   loaded:{items:false, shopping:false, recipes:false},
   place:'all', editing:null, draft:null, suggestions:[], weekStart:null, user:null,
 };
@@ -37,6 +37,12 @@ const cap = s => s.charAt(0).toUpperCase() + s.slice(1);
 const shortDate = s => { const d = parse(s); return MONTH[d.getMonth()]+' '+d.getDate(); };
 const dayLabel = s => { const d = parse(s); return DOW[d.getDay()]+' '+d.getDate()+' '+MONTH[d.getMonth()]; };
 const days2date = n => { const v = Math.round(Number(n)); return Number.isFinite(v) && v > 0 && v < 4000 ? addDays(today(), v) : ''; };
+const USD = new Intl.NumberFormat('en-US', {style:'currency', currency:'USD'});
+const money = n => USD.format(n || 0);
+// Prices are dollars as numbers; anything blank, zero or unreadable means "no price".
+const parsePrice = s => { const n = Number(String(s == null ? '' : s).replace(/[$,\s]/g, '')); return Number.isFinite(n) && n > 0 && n < 100000 ? Math.round(n * 100) / 100 : null; };
+const priceText = n => n == null ? '' : n.toFixed(2);
+const monthKey = (offset = 0) => { const d = new Date(); d.setDate(1); d.setMonth(d.getMonth() + offset); return iso(d).slice(0, 7); };
 const ls = {
   get: k => { try { return localStorage.getItem(k); } catch (e) { return null; } },
   set: (k, v) => { try { v == null ? localStorage.removeItem(k) : localStorage.setItem(k, v); } catch (e) {} },
@@ -192,7 +198,8 @@ const placeEnum = {type:'string', enum: Object.keys(PLACES)};
 const RECIPE = {title: str, minutes: int, why: str, uses: strs, missing: strs, ingredients: strs, steps: strs};
 const SCHEMA = {
   days: obj({days: int}),
-  photo: obj({items: {type:'array', items: obj({name: str, qty: str, place: placeEnum, days: int})}}),
+  photo: obj({items: {type:'array', items: obj({name: str, qty: str, place: placeEnum, days: int, price: {type:'number'}})}}),
+  price: obj({price: {type:'number'}}),
   putAway: obj({items: {type:'array', items: obj({name: str, place: placeEnum, days: int})}}),
   recipes: obj({recipes: {type:'array', items: obj(RECIPE)}}),
   plan: obj({dinners: {type:'array', items: obj({date: {type:'string', format:'date'}, ...RECIPE})}}),
@@ -316,7 +323,8 @@ function renderCabinet(){
     const rows = items.filter(i => itemStatus(i).group === g)
       .sort((a, b) => (a.expires || '9').localeCompare(b.expires || '9') || a.name.localeCompare(b.name));
     if (!rows.length) continue;
-    box.append(h('h2', {text:`${label} · ${rows.length}`}), h('div', {class:'list'}, rows.map(itemRow)));
+    const atStake = g === 'expired' ? rows.reduce((s, i) => s + (i.price || 0), 0) : 0;
+    box.append(h('h2', {text:`${label} · ${rows.length}${atStake ? ' · ' + money(atStake) : ''}`}), h('div', {class:'list'}, rows.map(itemRow)));
   }
   restoreEdit(keep);
 }
@@ -328,10 +336,13 @@ function itemRow(it){
     h('button', {class:'rowmain', type:'button', 'aria-label':'Edit ' + it.name, onclick: () => { state.editing = it.id; renderCabinet(); }},
       h('span', {class:'name', text:it.name}),
       h('span', {class:'meta'}, it.qty ? h('span', {text:it.qty}) : null, h('span', {text: PLACES[it.place] || ''}),
+        it.price != null ? h('span', {text: money(it.price)}) : null,
         it.expires ? h('span', {class:'stamp', text: stampFor(it)}) : null)),
     h('div', {class:'rowside'},
       st.tone ? h('span', {class:'pill ' + st.tone, text:st.label}) : h('span', {class:'soft', text:st.label}),
-      h('button', {class:'link', type:'button', onclick: guard(() => usedUp(it))}, 'Used up')));
+      h('div', {class:'rowbtns'},
+        h('button', {class:'link', type:'button', onclick: guard(() => removeItem(it, 'used'))}, 'Used up'),
+        h('button', {class:'link toss', type:'button', 'aria-label':'Threw out ' + it.name, onclick: guard(() => removeItem(it, 'tossed'))}, 'Tossed'))));
 }
 
 function placeSelect(v){
@@ -342,7 +353,7 @@ function editRow(it){
   const f = h('form', {class:'row edit', 'data-edit': it.id, onsubmit: guard(async e => {
     e.preventDefault();
     const val = n => f.querySelector(`[name="${n}"]`).value.trim();
-    const v = {name: val('name'), qty: val('qty'), place: val('place'), expires: val('expires')};
+    const v = {name: val('name'), qty: val('qty'), place: val('place'), expires: val('expires'), price: parsePrice(val('price'))};
     if (!v.name) return;
     if (v.expires !== (it.expires || '')) v.guessed = false;
     state.editing = null;
@@ -353,20 +364,42 @@ function editRow(it){
     h('label', {class:'field'}, 'Amount', h('input', {name:'qty', value: it.qty || ''})),
     h('label', {class:'field'}, 'Kept in', placeSelect(it.place)),
     h('label', {class:'field'}, 'Use by', h('input', {name:'expires', type:'date', value: it.expires || ''})),
+    h('label', {class:'field'}, 'Price', h('input', {name:'price', inputmode:'decimal', placeholder:'$0.00', value: priceText(it.price)})),
     h('div', {class:'editbar'},
       h('button', {class:'btn', type:'submit'}, 'Save'),
       h('button', {class:'link', type:'button', onclick: () => { state.editing = null; renderCabinet(); }}, 'Cancel'),
-      h('button', {class:'link danger', type:'button', onclick: guard(() => { state.editing = null; return usedUp(it, true); })}, 'Delete')));
+      h('button', {class:'link danger', type:'button', onclick: guard(() => { state.editing = null; return removeItem(it, 'deleted'); })}, 'Delete')));
   return f;
 }
 
-async function usedUp(it, deleted){
+// how: 'used' (eaten), 'tossed' (thrown out, so it counts as waste), 'deleted' (entered by mistake).
+async function removeItem(it, how){
   const {id, ...data} = it;
   await db.doc('items/' + id).delete();
-  toast(deleted ? `Deleted ${it.name}` : `Used up ${it.name}`, [
-    {label:'Undo', fn: () => db.doc('items/' + id).set(data)},
+  let wasteId = null;
+  if (how === 'tossed'){
+    const d = daysUntil(it.expires);
+    const price = it.price == null ? null : it.price;
+    const ref = await db.collection('waste').add({name: it.name, qty: it.qty || '', place: it.place || '', price, estimated: false,
+      reason: d !== null && d < 0 ? 'expired' : 'tossed', expires: it.expires || '', date: today(), at: Date.now()});
+    wasteId = ref.id;
+    if (price == null && claude) guessPrice(wasteId, it);
+  }
+  const label = how === 'tossed' ? `Tossed ${it.name}${it.price != null ? ', ' + money(it.price) + ' wasted' : ''}` : how === 'deleted' ? `Deleted ${it.name}` : `Used up ${it.name}`;
+  toast(label, [
+    {label:'Undo', fn: async () => { await db.doc('items/' + id).set(data); if (wasteId) await db.doc('waste/' + wasteId).delete(); }},
     {label:'Add to list', fn: async () => { const n = await addShopping([it.name]); toast(n ? `${it.name} is on the list` : `${it.name} was already on the list`); }},
   ]);
+}
+
+// A tossed item with no price gets Claude's estimate of what it usually costs, marked as estimated.
+async function guessPrice(wasteId, it){
+  try {
+    const g = await claude.json(`What does ${it.qty ? it.qty + ' of ' : ''}"${it.name}" typically cost at a US grocery store, in dollars? Answer with your best single estimate.`, {schema: SCHEMA.price, effort:'low'});
+    const price = parsePrice(g && g.price);
+    if (price == null || !state.waste.some(w => w.id === wasteId && w.price == null)) return;
+    await db.doc('waste/' + wasteId).update({price, estimated: true});
+  } catch (e) { /* the entry stays without a price; it can be filled in by hand */ }
 }
 
 async function guessDate(id, v){
@@ -383,7 +416,8 @@ async function guessDate(id, v){
 // ---------- photo intake ----------
 const photoPrompt = () => `These are photos of groceries: a receipt, a grocery haul, or the inside of a fridge or cupboard. Today is ${today()}.
 List each food item you can identify. On a receipt, turn store abbreviations into plain names (for example "ORG BNLS CHKN BRST" becomes "chicken breast") and skip bags, deposits, tax, totals and anything that isn't food.
-For each item give a short plain name, the amount if you can tell (for example "1.5 lb" or "2 cans", otherwise ""), where it is usually kept (fridge, freezer or pantry), and how many days it typically stays good from today when bought fresh. For dry or canned goods give the unopened shelf life.`;
+For each item give a short plain name, the amount if you can tell (for example "1.5 lb" or "2 cans", otherwise ""), where it is usually kept (fridge, freezer or pantry), and how many days it typically stays good from today when bought fresh. For dry or canned goods give the unopened shelf life.
+For "price", give what was paid for that line in dollars when a receipt shows it, after any discount printed on the receipt for it; otherwise 0.`;
 
 function renderDraft(){
   const box = $('#draft'), rows = state.draft;
@@ -395,7 +429,8 @@ function renderDraft(){
     rows.map(r => h('div', {class:'drow'},
       h('input', {type:'checkbox', checked: r.keep, 'aria-label':'Keep ' + r.name, onchange: e => { r.keep = e.target.checked; renderDraft(); }}),
       h('input', {value:r.name, 'aria-label':'Item', oninput: e => { r.name = e.target.value; }}),
-      h('input', {value:r.qty, placeholder:'Amount', 'aria-label':'Amount', oninput: e => { r.qty = e.target.value; }}),
+      h('input', {value:r.qty, placeholder:'Qty', 'aria-label':'Amount', oninput: e => { r.qty = e.target.value; }}),
+      h('input', {value:r.price, placeholder:'$', inputmode:'decimal', 'aria-label':'Price', oninput: e => { r.price = e.target.value; }}),
       h('div', {class:'wide'},
         h('select', {value:r.place, 'aria-label':'Kept in', onchange: e => { r.place = e.target.value; }}, Object.entries(PLACES).map(([k, l]) => h('option', {value:k}, l))),
         h('input', {type:'date', value:r.expires, 'aria-label':'Use by', onchange: e => { r.expires = e.target.value; r.guessed = false; }})))),
@@ -403,7 +438,7 @@ function renderDraft(){
       h('button', {class:'btn', type:'button', disabled: !n, onclick: guard(async () => {
         const keep = state.draft.filter(r => r.keep && r.name.trim());
         state.draft = null; renderDraft();
-        for (const r of keep) await db.collection('items').add({name:r.name.trim(), qty:r.qty.trim(), place:r.place, expires:r.expires, guessed:r.guessed && !!r.expires, added:Date.now()});
+        for (const r of keep) await db.collection('items').add({name:r.name.trim(), qty:r.qty.trim(), place:r.place, expires:r.expires, guessed:r.guessed && !!r.expires, price: parsePrice(r.price), added:Date.now()});
         toast(`Added ${keep.length} item${keep.length === 1 ? '' : 's'}`);
       })}, `Add ${n} item${n === 1 ? '' : 's'}`),
       h('button', {class:'link', type:'button', onclick: () => { state.draft = null; renderDraft(); }}, 'Discard')));
@@ -534,9 +569,9 @@ function renderSaved(){
       h('span', {class:'meta'}, r.minutes ? h('span', {text:`${r.minutes} min`}) : null, h('span', {text:`${(r.ingredients || []).length} ingredients`})))))));
 }
 
-// Bottom sheet shared by recipes and settings.
-function openSheet(label, build){
-  const close = () => { sheet.remove(); document.removeEventListener('keydown', esc); };
+// Bottom sheet shared by recipes, settings and the waste summary.
+function openSheet(label, build, onClose){
+  const close = () => { sheet.remove(); document.removeEventListener('keydown', esc); if (onClose) onClose(); };
   const esc = e => { if (e.key === 'Escape') close(); };
   const panel = h('div', {class:'panel', role:'dialog', 'aria-modal':'true', 'aria-label': label});
   const sheet = h('div', {class:'sheet', onclick: e => { if (e.target === sheet) close(); }}, panel);
@@ -627,6 +662,68 @@ Plan one dinner for each of these dates: ${dates.join(', ')}.
 Use the items that expire soonest on the earliest dates, and skip anything already expired. Reuse ingredients across the week so the shopping list stays short. Assume salt, pepper, cooking oil and water are on hand.
 
 For each dinner: "date" is one of the dates above. "why" is one short sentence on why it fits that day. "uses" names items from their list exactly as written. "missing" is what they'd need to buy, as short shopping-list names. "ingredients" include amounts. At most 6 short steps.`;
+
+// ---------- waste ----------
+// Every "Tossed" leaves a record in waste/. Totals count only entries that have a price.
+const sumPrice = list => list.reduce((s, x) => s + (x.price || 0), 0);
+const expiredNow = () => state.items.filter(i => itemStatus(i).group === 'expired');
+const plural = (n, word) => `${n} ${word}${n === 1 ? '' : 's'}`;
+let wasteView = null;
+
+function renderWasteBar(){
+  const bar = $('#wasteBar');
+  const staleCost = sumPrice(expiredNow());
+  bar.hidden = !state.waste.length && !staleCost;
+  if (!bar.hidden) bar.replaceChildren(
+    h('span', {}, 'Wasted this month ', h('b', {text: money(sumPrice(state.waste.filter(w => (w.date || '').startsWith(monthKey()))))}),
+      staleCost ? ` · ${money(staleCost)} expired in the cabinet` : ''),
+    h('span', {class:'more', text:'Details ›'}));
+  if (wasteView) wasteView();
+}
+
+function wasteRow(w){
+  return h('div', {class:'wrow'},
+    h('div', {},
+      h('div', {class:'name', text: w.name}),
+      h('div', {class:'meta', text: [w.date ? shortDate(w.date) : '', w.reason === 'expired' ? 'expired' : 'thrown out', w.qty].filter(Boolean).join(' · ')})),
+    h('span', {class:'est', text: w.estimated ? '~' : ''}),
+    h('input', {inputmode:'decimal', placeholder:'$', 'aria-label':'Price of ' + w.name, value: priceText(w.price),
+      onchange: guard(e => db.doc('waste/' + w.id).update({price: parsePrice(e.target.value), estimated: false}))}),
+    h('button', {class:'x', type:'button', 'aria-label':'Remove ' + w.name + ' from the waste log', onclick: guard(() => db.doc('waste/' + w.id).delete())}, '×'));
+}
+
+function openWaste(){
+  const body = h('div', {class:'tab'});
+  let pending = false;
+  body.addEventListener('focusout', () => { if (pending){ pending = false; setTimeout(draw); } });
+  const draw = () => {
+    if (body.contains(document.activeElement) && document.activeElement.tagName === 'INPUT'){ pending = true; return; }
+    const W = state.waste.slice().sort((a, b) => (b.at || 0) - (a.at || 0));
+    const since = prefix => W.filter(w => (w.date || '').startsWith(prefix));
+    const stat = (label, list) => h('div', {class:'stat'}, h('b', {text: money(sumPrice(list))}), h('span', {text: `${label} · ${plural(list.length, 'item')}`}));
+    const stale = expiredNow();
+    const top = [...W.reduce((m, w) => {
+      const t = m.get(norm(w.name)) || {name: w.name, n: 0, total: 0};
+      t.n++; t.total += w.price || 0;
+      return m.set(norm(w.name), t);
+    }, new Map()).values()].filter(t => t.n > 1 || t.total > 0).sort((a, b) => b.total - a.total || b.n - a.n).slice(0, 5);
+    const noPrice = W.filter(w => w.price == null).length;
+    const notes = [noPrice ? `${plural(noPrice, 'item')} without a price ${noPrice === 1 ? "isn't" : "aren't"} in the totals; type a price to count ${noPrice === 1 ? 'it' : 'them'}.` : '',
+      W.some(w => w.estimated) ? '~ marks prices Claude estimated.' : ''].filter(Boolean).join(' ');
+    body.replaceChildren(...[
+      h('div', {class:'stats'}, stat('This month', since(monthKey())), stat('Last month', since(monthKey(-1))), stat(today().slice(0, 4), since(today().slice(0, 4)))),
+      stale.length ? h('p', {class:'note', text: `Still in your cabinet past its date: ${plural(stale.length, 'item')}${sumPrice(stale) ? ', ' + money(sumPrice(stale)) : ''}. Mark ${stale.length === 1 ? 'it' : 'them'} Tossed or Used up from the list.`}) : null,
+      top.length ? h('h4', {}, 'Most wasted') : null,
+      top.length ? h('ul', {}, top.map(t => h('li', {text: `${t.name}${t.n > 1 ? ' ×' + t.n : ''}${t.total ? ' · ' + money(t.total) : ''}`}))) : null,
+      h('h4', {}, 'Thrown out'),
+      W.length ? h('div', {}, W.map(wasteRow)) : h('p', {class:'note', text:'Nothing yet. When you throw something out, tap Tossed instead of Used up and it shows up here.'}),
+      notes ? h('p', {class:'note', text: notes}) : null,
+    ].filter(Boolean));
+  };
+  wasteView = draw;
+  draw();
+  openSheet('Food waste', () => [body], () => { wasteView = null; });
+}
 
 // ---------- settings ----------
 function openSettings(){
@@ -719,15 +816,16 @@ function wire(){
   for (const b of document.querySelectorAll('.tabs button')) b.onclick = () => showTab(b.dataset.tab);
   $('#status').onclick = () => { state.place = 'all'; syncChips(); renderCabinet(); showTab('cabinet'); };
   $('#settingsBtn').onclick = openSettings;
+  $('#wasteBar').onclick = openWaste;
   for (const b of document.querySelectorAll('[data-open-settings]')) b.onclick = openSettings;
   for (const c of document.querySelectorAll('#placeChips .chip')) c.onclick = () => { state.place = c.dataset.place; syncChips(); renderCabinet(); };
 
   $('#addForm').onsubmit = guard(async e => {
     e.preventDefault();
-    const v = {name: $('#fName').value.trim(), qty: $('#fQty').value.trim(), place: $('#fPlace').value, expires: $('#fExp').value};
+    const v = {name: $('#fName').value.trim(), qty: $('#fQty').value.trim(), place: $('#fPlace').value, expires: $('#fExp').value, price: parsePrice($('#fPrice').value)};
     if (!v.name) return;
     const ref = await db.collection('items').add({...v, guessed:false, added: Date.now()});
-    $('#fName').value = ''; $('#fQty').value = ''; $('#fExp').value = '';
+    $('#fName').value = ''; $('#fQty').value = ''; $('#fExp').value = ''; $('#fPrice').value = '';
     $('#fName').focus();
     if (!v.expires && claude) guessDate(ref.id, v);
   });
@@ -742,7 +840,8 @@ function wire(){
       const out = await claude.json(photoPrompt(), {schema: SCHEMA.photo, images, signal});
       const rows = (out && Array.isArray(out.items) ? out.items : []).filter(r => r && typeof r.name === 'string' && r.name.trim()).map(r => {
         const expires = days2date(r.days);
-        return {name: r.name.trim(), qty: String(r.qty == null ? '' : r.qty).trim(), place: PLACES[r.place] ? r.place : 'pantry', expires, guessed: !!expires, keep: true};
+        return {name: r.name.trim(), qty: String(r.qty == null ? '' : r.qty).trim(), place: PLACES[r.place] ? r.place : 'pantry', expires, guessed: !!expires,
+          price: priceText(parsePrice(r.price)), keep: true};
       });
       if (!rows.length) throw {mine:true, message:"Claude didn't find any food in that photo."};
       state.draft = rows; renderDraft();
@@ -843,12 +942,13 @@ function fillPrefs(){
 function banner(text){ const b = $('#banner'); b.textContent = text || ''; b.hidden = !text; }
 function dbLost(e){ banner(errText(e) || 'Lost the connection to your saved kitchen. Reload the app.'); }
 
-function renderAll(){ renderCabinet(); renderStatus(); renderShop(); renderSaved(); renderPlan(); renderSuggestions(); fillPrefs(); }
+function renderAll(){ renderCabinet(); renderStatus(); renderWasteBar(); renderShop(); renderSaved(); renderPlan(); renderSuggestions(); fillPrefs(); }
 
 function subscribe(){
   const docs = s => s.docs.map(d => ({id: d.id, ...d.data()}));
   unsubs = [
-    db.collection('items').onSnapshot(s => { state.items = docs(s); state.loaded.items = true; renderCabinet(); renderStatus(); renderSuggestions(); }, dbLost),
+    db.collection('items').onSnapshot(s => { state.items = docs(s); state.loaded.items = true; renderCabinet(); renderStatus(); renderWasteBar(); renderSuggestions(); }, dbLost),
+    db.collection('waste').onSnapshot(s => { state.waste = docs(s); renderWasteBar(); }, dbLost),
     db.collection('shopping').onSnapshot(s => { state.shopping = docs(s); state.loaded.shopping = true; renderShop(); renderSuggestions(); }, dbLost),
     db.collection('recipes').onSnapshot(s => { state.recipes = docs(s); state.loaded.recipes = true; renderSaved(); renderPlan(); }, dbLost),
     db.collection('meals').onSnapshot(s => { state.meals = Object.fromEntries(s.docs.map(d => [d.id, d.data()])); renderPlan(); }, dbLost),
@@ -858,7 +958,7 @@ function subscribe(){
 function unsubscribe(){
   for (const u of unsubs) u();
   unsubs = []; db = null;
-  Object.assign(state, {items:[], shopping:[], meals:{}, recipes:[], prefs:{}, suggestions:[], draft:null, editing:null, loaded:{items:false, shopping:false, recipes:false}});
+  Object.assign(state, {items:[], shopping:[], meals:{}, recipes:[], prefs:{}, waste:[], suggestions:[], draft:null, editing:null, loaded:{items:false, shopping:false, recipes:false}});
   renderDraft(); renderAll();
 }
 

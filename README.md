@@ -1,6 +1,6 @@
 # Kitchen Cabinet
 
-A phone app for what's in your fridge, freezer and pantry. Add things by hand or from a photo of a receipt, see what to use first, get recipe ideas from what you already have, plan the week's meals and keep a shopping list. It installs to the home screen and works offline.
+A phone app for what's in your fridge, freezer and pantry. Add things by hand or from a photo of a receipt, see what to use first, get recipe ideas from what you already have, plan the week's meals and keep a shopping list. Mark things **Tossed** instead of **Used up** and it keeps a running total of the money that went in the bin (prices come from the receipt, your typing, or a Claude estimate). It installs to the home screen and works offline.
 
 It's a static web app: no build step, no server of its own. Data syncs through Firebase (free tier), and the Claude features call the Anthropic API directly from the phone with the user's own API key.
 
